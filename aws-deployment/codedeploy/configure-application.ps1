@@ -38,59 +38,35 @@ try {
     Write-DeploymentLog "Starting AfterInstall lifecycle hook - Configure Application"
     
     # ============================================================================
+    # STEP 0: Load Deployment Config
+    # ============================================================================
+    
+    $configPath = "C:\Deploy\config.json"
+    if (Test-Path $configPath) {
+        $deployConfig = Get-Content $configPath -Raw | ConvertFrom-Json
+        $awsCli = $deployConfig.AwsCliPath
+        $awsRegion = $deployConfig.Region
+        $secretArn = $deployConfig.DbSecretArn
+        Write-DeploymentLog "Loaded deployment config: region=$awsRegion, environment=$($deployConfig.Environment)"
+    } else {
+        Write-DeploymentLog "No deployment config found at $configPath, using defaults" "WARN"
+        $awsCli = "C:\Program Files\Amazon\AWSCLIV2\aws.exe"
+        $awsRegion = "us-east-2"
+        $secretArn = $null
+    }
+    
+    # ============================================================================
     # STEP 1: Retrieve Database Credentials from AWS Secrets Manager
     # ============================================================================
     
     Write-DeploymentLog "Retrieving database credentials from AWS Secrets Manager"
     
-    # Get secret ARN from environment variable or SSM Parameter Store
-    $secretArn = $env:DB_SECRET_ARN
-    if ([string]::IsNullOrEmpty($secretArn)) {
-        Write-DeploymentLog "DB_SECRET_ARN environment variable not set, retrieving from SSM Parameter Store"
-        
-        # Get environment from EC2 instance tags or default to 'dev'
-        $environment = $env:ENVIRONMENT
-        if ([string]::IsNullOrEmpty($environment)) {
-            try {
-                # Try to get environment from EC2 instance tags
-                $instanceId = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" -TimeoutSec 5
-                $region = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/placement/region" -TimeoutSec 5
-                
-                $tags = aws ec2 describe-tags --filters "Name=resource-id,Values=$instanceId" "Name=key,Values=Environment" --region $region --query "Tags[0].Value" --output text
-                
-                if (-not [string]::IsNullOrEmpty($tags) -and $tags -ne "None") {
-                    $environment = $tags
-                    Write-DeploymentLog "Detected environment from EC2 tags: $environment"
-                } else {
-                    $environment = "dev"
-                    Write-DeploymentLog "Could not detect environment from tags, defaulting to 'dev'"
-                }
-            } catch {
-                $environment = "dev"
-                Write-DeploymentLog "Could not detect environment, defaulting to 'dev': $_" "WARN"
-            }
-        }
-        
-        # Retrieve secret ARN from SSM Parameter Store
-        $parameterName = "/loan-processing/$environment/db-secret-arn"
-        Write-DeploymentLog "Retrieving secret ARN from SSM Parameter: $parameterName"
-        
+    if ([string]::IsNullOrEmpty($secretArn) -or $secretArn -like "*error*") {
+        Write-DeploymentLog "Secret ARN not in config, trying SSM Parameter Store" "WARN"
         try {
-            $secretArn = aws ssm get-parameter --name $parameterName --query "Parameter.Value" --output text --region $env:AWS_REGION
-            
-            if ($LASTEXITCODE -ne 0) {
-                throw "AWS CLI returned exit code $LASTEXITCODE"
-            }
-            
-            if ([string]::IsNullOrEmpty($secretArn) -or $secretArn -eq "None") {
-                throw "SSM Parameter returned empty value"
-            }
-            
-            Write-DeploymentLog "Successfully retrieved secret ARN from SSM Parameter Store"
-            
+            $secretArn = & $awsCli ssm get-parameter --name "/loan-processing/$($deployConfig.Environment)/db-secret-arn" --query "Parameter.Value" --output text --region $awsRegion 2>&1
         } catch {
-            Write-DeploymentLog "Failed to retrieve secret ARN from SSM Parameter Store: $_" "ERROR"
-            throw "DB_SECRET_ARN environment variable is not set and SSM Parameter retrieval failed: $_"
+            throw "Cannot retrieve DB secret ARN: $_"
         }
     }
     
@@ -98,11 +74,11 @@ try {
     
     # Retrieve secret from Secrets Manager
     try {
-        $secretJson = aws secretsmanager get-secret-value `
+        $secretJson = & $awsCli secretsmanager get-secret-value `
             --secret-id $secretArn `
             --query SecretString `
             --output text `
-            --region $env:AWS_REGION
+            --region $awsRegion
         
         if ($LASTEXITCODE -ne 0) {
             throw "AWS CLI returned exit code $LASTEXITCODE"
