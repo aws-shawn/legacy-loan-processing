@@ -10,12 +10,12 @@ phases:
   pre_build:
     commands:
       - echo "Restoring NuGet packages..."
-      - nuget restore LoanProcessing.sln
+      - nuget restore LoanProcessing.Web\LoanProcessing.Web.csproj -PackagesDirectory packages
       
   build:
     commands:
       - echo "Building solution in Release configuration..."
-      - msbuild LoanProcessing.sln /p:Configuration=Release /p:Platform="Any CPU" /p:DeployOnBuild=false /v:minimal
+      - msbuild LoanProcessing.Web\LoanProcessing.Web.csproj /p:Configuration=Release /p:Platform="AnyCPU" /p:DeployOnBuild=false /v:minimal
       
   post_build:
     commands:
