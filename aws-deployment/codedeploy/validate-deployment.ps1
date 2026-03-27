@@ -2,6 +2,13 @@
 # CodeDeploy ValidateService lifecycle hook
 # Validates that the deployment was successful by checking IIS, website, HTTP response, and database connectivity
 
+# Force 64-bit PowerShell (WebAdministration requires it)
+if ($env:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    & "$env:SystemRoot\SysNative\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File $scriptPath
+    exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = "Stop"
 
 # Function to write logs to CloudWatch

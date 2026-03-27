@@ -2,6 +2,14 @@
 # CodeDeploy ApplicationStart lifecycle hook
 # Configures and starts IIS website and application pool after deployment
 
+# Force 64-bit PowerShell (WebAdministration requires it)
+if ($env:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
+    # Running in 32-bit process on 64-bit OS - relaunch as 64-bit
+    $scriptPath = $MyInvocation.MyCommand.Path
+    & "$env:SystemRoot\SysNative\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File $scriptPath
+    exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = "Stop"
 
 # Function to write logs to CloudWatch
