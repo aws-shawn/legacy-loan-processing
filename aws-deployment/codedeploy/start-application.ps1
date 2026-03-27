@@ -87,6 +87,12 @@ try {
     
     Write-DeploymentLog "Configuring website: $siteName"
     
+    # Remove Default Web Site if it exists (frees port 80)
+    if (Test-Path "IIS:\Sites\Default Web Site") {
+        Write-DeploymentLog "Removing Default Web Site to free port 80"
+        Remove-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+    }
+    
     # Verify application path exists
     if (-not (Test-Path $appPath)) {
         Write-DeploymentLog "Application path does not exist: $appPath" "ERROR"
