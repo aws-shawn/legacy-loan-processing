@@ -5,7 +5,7 @@
 # Force 64-bit PowerShell (WebAdministration requires it)
 if ($env:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
     $scriptPath = $MyInvocation.MyCommand.Path
-    & "$env:SystemRoot\SysNative\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File $scriptPath
+    & "$env:SystemRoot\SysNative\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -Command "& { . '$scriptPath' }"
     exit $LASTEXITCODE
 }
 
