@@ -51,6 +51,13 @@ try {
     Install-Module SqlServer -Force -AllowClobber -Scope AllUsers
     Write-Host "SqlServer module installed"
 
+    # Install AWS PowerShell modules for Secrets Manager and SSM Parameter Store
+    Write-Host "Installing AWS PowerShell modules..."
+    Install-Module AWS.Tools.Common -Force -AllowClobber -Scope AllUsers
+    Install-Module AWS.Tools.SecretsManager -Force -AllowClobber -Scope AllUsers
+    Install-Module AWS.Tools.SimpleSystemsManagement -Force -AllowClobber -Scope AllUsers
+    Write-Host "AWS PowerShell modules installed"
+
     # Install CloudWatch Agent
     Write-Host "Installing CloudWatch Agent..."
     $cwAgentUrl = "https://s3.amazonaws.com/amazoncloudwatch-agent/windows/amd64/latest/amazon-cloudwatch-agent.msi"

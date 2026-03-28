@@ -35,6 +35,9 @@ function Write-SafeLog {
 }
 
 Import-Module SqlServer
+Import-Module AWS.Tools.Common
+Import-Module AWS.Tools.SecretsManager
+Import-Module AWS.Tools.SimpleSystemsManagement
 
 try {
     Write-DeploymentLog "Starting AfterInstall lifecycle hook - Configure Application"
@@ -46,16 +49,16 @@ try {
     $configPath = "C:\Deploy\config.json"
     if (Test-Path $configPath) {
         $deployConfig = Get-Content $configPath -Raw | ConvertFrom-Json
-        $awsCli = $deployConfig.AwsCliPath
         $awsRegion = $deployConfig.Region
         $secretArn = $deployConfig.DbSecretArn
         Write-DeploymentLog "Loaded deployment config: region=$awsRegion, environment=$($deployConfig.Environment)"
     } else {
         Write-DeploymentLog "No deployment config found at $configPath, using defaults" "WARN"
-        $awsCli = "C:\Program Files\Amazon\AWSCLIV2\aws.exe"
         $awsRegion = "us-east-2"
         $secretArn = $null
     }
+    
+    Set-DefaultAWSRegion -Region $awsRegion
     
     # ============================================================================
     # STEP 1: Retrieve Database Credentials from AWS Secrets Manager
@@ -66,7 +69,8 @@ try {
     if ([string]::IsNullOrEmpty($secretArn) -or $secretArn -like "*error*") {
         Write-DeploymentLog "Secret ARN not in config, trying SSM Parameter Store" "WARN"
         try {
-            $secretArn = & $awsCli ssm get-parameter --name "/loan-processing/$($deployConfig.Environment)/db-secret-arn" --query "Parameter.Value" --output text --region $awsRegion 2>&1
+            $ssmParam = Get-SSMParameterValue -Name "/loan-processing/$($deployConfig.Environment)/db-secret-arn" -Region $awsRegion
+            $secretArn = $ssmParam.Parameters[0].Value
         } catch {
             throw "Cannot retrieve DB secret ARN: ${_}"
         }
@@ -76,15 +80,8 @@ try {
     
     # Retrieve secret from Secrets Manager
     try {
-        $secretJson = & $awsCli secretsmanager get-secret-value `
-            --secret-id $secretArn `
-            --query SecretString `
-            --output text `
-            --region $awsRegion
-        
-        if ($LASTEXITCODE -ne 0) {
-            throw "AWS CLI returned exit code $LASTEXITCODE"
-        }
+        $secretResult = Get-SECSecretValue -SecretId $secretArn -Region $awsRegion
+        $secretJson = $secretResult.SecretString
         
         Write-DeploymentLog "Successfully retrieved secret from Secrets Manager"
         
