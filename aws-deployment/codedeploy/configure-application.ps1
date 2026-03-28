@@ -56,6 +56,7 @@ try {
         Write-DeploymentLog "No deployment config found at $configPath, using defaults" "WARN"
         $awsRegion = "us-east-2"
         $secretArn = $null
+        $deployConfig = @{ Environment = "workshop" }
     }
     
     Set-DefaultAWSRegion -Region $awsRegion

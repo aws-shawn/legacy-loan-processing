@@ -56,6 +56,7 @@ try {
     Install-Module AWS.Tools.Common -Force -AllowClobber -Scope AllUsers
     Install-Module AWS.Tools.SecretsManager -Force -AllowClobber -Scope AllUsers
     Install-Module AWS.Tools.SimpleSystemsManagement -Force -AllowClobber -Scope AllUsers
+    Install-Module AWS.Tools.CodePipeline -Force -AllowClobber -Scope AllUsers
     Write-Host "AWS PowerShell modules installed"
 
     # Install CloudWatch Agent
@@ -174,25 +175,29 @@ try {
     Write-Host "Installing CodeDeploy Agent..."
     Start-Process msiexec.exe -ArgumentList "/i", $codeDeployInstallerPath, "/qn", "/l*v", "C:\Windows\Temp\codedeploy-agent-install.log" -Wait
     
-    # Wait for service to be created
-    Start-Sleep -Seconds 10
-    
-    # Verify CodeDeploy Agent service exists and start it
-    $codeDeployService = Get-Service -Name "codedeployagent" -ErrorAction SilentlyContinue
-    if ($codeDeployService) {
-        Write-Host "CodeDeploy Agent service found, starting..."
-        Set-Service -Name "codedeployagent" -StartupType Automatic
-        Start-Service -Name "codedeployagent"
-        
-        # Verify service is running
-        $serviceStatus = (Get-Service -Name "codedeployagent").Status
-        if ($serviceStatus -eq "Running") {
-            Write-Host "CodeDeploy Agent installed and running successfully"
-        } else {
-            Write-Host "Warning: CodeDeploy Agent service is not running. Status: $serviceStatus"
+    # Poll for CodeDeploy Agent to be running (no arbitrary sleep)
+    Write-Host "Waiting for CodeDeploy Agent service..."
+    $maxAttempts = 30
+    $agentRunning = $false
+    for ($i = 1; $i -le $maxAttempts; $i++) {
+        $svc = Get-Service -Name "codedeployagent" -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            Write-Host "CodeDeploy Agent confirmed running on attempt $i"
+            $agentRunning = $true
+            break
         }
+        if ($svc -and $svc.Status -ne "Running") {
+            Set-Service -Name "codedeployagent" -StartupType Automatic -ErrorAction SilentlyContinue
+            Start-Service -Name "codedeployagent" -ErrorAction SilentlyContinue
+        }
+        Write-Host "Waiting for CodeDeploy Agent... attempt $i/$maxAttempts"
+        Start-Sleep -Seconds 5
+    }
+    
+    if ($agentRunning) {
+        Write-Host "CodeDeploy Agent installed and running successfully"
     } else {
-        Write-Host "Warning: CodeDeploy Agent service not found after installation"
+        Write-Host "Warning: CodeDeploy Agent not running after $maxAttempts attempts"
     }
     
     # Configure CodeDeploy Agent with region and environment
@@ -212,6 +217,21 @@ region: $region
     # Write configuration file
     $codeDeployConfig | Out-File -FilePath $codeDeployConfigPath -Encoding UTF8 -Force
     Write-Host "CodeDeploy Agent configured for region: $region, environment: ${environment}"
+
+    # Trigger CodePipeline deployment
+    if ($agentRunning) {
+        Write-Host "Triggering CodePipeline deployment..."
+        try {
+            Import-Module AWS.Tools.CodePipeline
+            Start-CPPipelineExecution -Name "loan-processing-pipeline-${environment}" -Region $region
+            Write-Host "CodePipeline triggered successfully"
+        } catch {
+            Write-Host "WARNING: Failed to trigger CodePipeline: $_"
+            Write-Host "Pipeline can be triggered manually from the AWS Console"
+        }
+    } else {
+        Write-Host "Skipping pipeline trigger - CodeDeploy Agent not running"
+    }
 
     # Install Git
     Write-Host "Installing Git..."

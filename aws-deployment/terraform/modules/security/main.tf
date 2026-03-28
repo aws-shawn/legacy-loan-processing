@@ -161,7 +161,7 @@ resource "aws_iam_role_policy" "instance" {
           "ssm:GetParameters",
           "ssm:GetParametersByPath"
         ]
-        Resource = "arn:aws:ssm:*:*:parameter/${var.project_name}/${var.environment}/*"
+        Resource = "arn:aws:ssm:*:*:parameter/loan-processing/${var.environment}/*"
       },
       {
         Effect = "Allow"
