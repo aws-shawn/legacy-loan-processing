@@ -57,6 +57,7 @@ try {
     Install-Module AWS.Tools.SecretsManager -Force -AllowClobber -Scope AllUsers
     Install-Module AWS.Tools.SimpleSystemsManagement -Force -AllowClobber -Scope AllUsers
     Install-Module AWS.Tools.CodePipeline -Force -AllowClobber -Scope AllUsers
+    Install-Module AWS.Tools.CodeDeploy -Force -AllowClobber -Scope AllUsers
     Write-Host "AWS PowerShell modules installed"
 
     # Install CloudWatch Agent
@@ -218,8 +219,58 @@ region: $region
     $codeDeployConfig | Out-File -FilePath $codeDeployConfigPath -Encoding UTF8 -Force
     Write-Host "CodeDeploy Agent configured for region: $region, environment: ${environment}"
 
-    # Trigger CodePipeline deployment
+    # Verify CodeDeploy agent registration with the CodeDeploy service
+    $agentRegistered = $false
     if ($agentRunning) {
+        Write-Host "Verifying CodeDeploy agent registration with AWS..."
+
+        # Retrieve EC2 instance ID from IMDSv2 metadata
+        try {
+            $imdsToken = Invoke-RestMethod -Uri "http://169.254.169.254/latest/api/token" `
+                -Method PUT `
+                -Headers @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" } `
+                -ErrorAction Stop
+            $instanceId = Invoke-RestMethod -Uri "http://169.254.169.254/latest/meta-data/instance-id" `
+                -Headers @{ "X-aws-ec2-metadata-token" = $imdsToken } `
+                -ErrorAction Stop
+            Write-Host "EC2 Instance ID: $instanceId"
+        } catch {
+            Write-Host "WARNING: Failed to retrieve instance ID from IMDSv2: $_"
+        }
+
+        if ($instanceId) {
+            Import-Module AWS.Tools.CodeDeploy
+
+            $deploymentGroup = "loan-processing-${environment}"
+            $regMaxAttempts = 30
+            for ($r = 1; $r -le $regMaxAttempts; $r++) {
+                try {
+                    Write-Host "Checking agent registration... attempt $r/$regMaxAttempts"
+                    $target = Get-CDDeploymentTarget `
+                        -DeploymentGroupName $deploymentGroup `
+                        -TargetId $instanceId `
+                        -Region $region `
+                        -ErrorAction Stop
+                    if ($target -and $target.InstanceTarget.Status -in @("Registered", "Succeeded", "Ready")) {
+                        Write-Host "CodeDeploy agent registered on attempt $r"
+                        $agentRegistered = $true
+                        break
+                    }
+                    Write-Host "Agent not yet registered, status: $($target.InstanceTarget.Status)"
+                } catch {
+                    Write-Host "Registration check attempt $r failed: $_"
+                }
+                Start-Sleep -Seconds 10
+            }
+
+            if (-not $agentRegistered) {
+                Write-Host "Warning: CodeDeploy agent not registered after $regMaxAttempts attempts (5 minute timeout)"
+            }
+        }
+    }
+
+    # Trigger CodePipeline deployment
+    if ($agentRunning -and $agentRegistered) {
         Write-Host "Triggering CodePipeline deployment..."
         try {
             Import-Module AWS.Tools.CodePipeline
@@ -229,6 +280,9 @@ region: $region
             Write-Host "WARNING: Failed to trigger CodePipeline: $_"
             Write-Host "Pipeline can be triggered manually from the AWS Console"
         }
+    } elseif ($agentRunning -and -not $agentRegistered) {
+        Write-Host "WARNING: Skipping pipeline trigger - CodeDeploy agent running but not registered after timeout"
+        Write-Host "Pipeline can be triggered manually from the AWS Console after agent registration completes"
     } else {
         Write-Host "Skipping pipeline trigger - CodeDeploy Agent not running"
     }
