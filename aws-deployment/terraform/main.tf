@@ -38,6 +38,11 @@ data "aws_availability_zones" "available" {
 
 data "aws_caller_identity" "current" {}
 
+# Fetch the public IP of the machine running Terraform
+data "http" "my_ip" {
+  url = "https://checkip.amazonaws.com"
+}
+
 # Random suffix for unique resource names
 resource "random_string" "suffix" {
   length  = 6
@@ -80,7 +85,10 @@ module "security" {
   project_name        = var.project_name
   environment         = var.environment
   vpc_id              = module.networking.vpc_id
-  allowed_cidr_blocks = var.allowed_cidr_blocks
+  allowed_cidr_blocks = distinct(concat(
+    var.allowed_cidr_blocks,
+    ["${chomp(data.http.my_ip.response_body)}/32"]
+  ))
 
   tags = local.common_tags
 }

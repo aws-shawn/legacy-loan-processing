@@ -158,9 +158,9 @@ variable "enable_detailed_monitoring" {
 
 # Security Configuration
 variable "allowed_cidr_blocks" {
-  description = "CIDR blocks allowed to access the application (use your IP or 0.0.0.0/0 for workshop)"
+  description = "Additional CIDR blocks allowed to access the application (deployer IP is auto-detected)"
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "enable_waf" {
