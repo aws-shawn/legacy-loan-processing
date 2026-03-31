@@ -15,15 +15,19 @@ namespace LoanProcessing.Web.Validation.Tests
     {
         private readonly string _baseUrl;
 
+        // Shared HttpClient avoids socket exhaustion on .NET Framework
+        // and is the recommended pattern on .NET 8+.
+        private static readonly HttpClient SharedClient = CreateHttpClient();
+
         public string CategoryName { get { return "Smoke"; } }
 
         /// <summary>
         /// Creates a new SmokeTests instance.
         /// </summary>
         /// <param name="baseUrl">
-        /// Base URL of the application (e.g., "http://localhost").
-        /// If null or empty, attempts to determine from HttpContext.Current,
-        /// falling back to "http://localhost".
+        /// Base URL of the application (e.g., "http://localhost:80").
+        /// If null or empty, resolves to localhost on the current port,
+        /// which avoids routing through a load balancer or reverse proxy.
         /// </param>
         public SmokeTests(string baseUrl = null)
         {
@@ -35,6 +39,13 @@ namespace LoanProcessing.Web.Validation.Tests
             {
                 _baseUrl = baseUrl.TrimEnd('/');
             }
+        }
+
+        private static HttpClient CreateHttpClient()
+        {
+            var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(10);
+            return client;
         }
 
         public List<TestResult> Run(ModernizationStage stage)
@@ -70,69 +81,65 @@ namespace LoanProcessing.Web.Validation.Tests
             var sw = Stopwatch.StartNew();
             try
             {
-                using (var client = new HttpClient())
+                var url = _baseUrl + path;
+                var response = SharedClient.GetAsync(url).Result;
+                var statusCode = (int)response.StatusCode;
+                var body = response.Content.ReadAsStringAsync().Result;
+                sw.Stop();
+
+                // Check status code
+                if (statusCode != 200)
                 {
-                    client.Timeout = TimeSpan.FromSeconds(30);
-                    var url = _baseUrl + path;
-                    var response = client.GetAsync(url).Result;
-                    var statusCode = (int)response.StatusCode;
-                    var body = response.Content.ReadAsStringAsync().Result;
-                    sw.Stop();
-
-                    // Check status code
-                    if (statusCode != 200)
-                    {
-                        return new TestResult
-                        {
-                            TestName = testName,
-                            Category = CategoryName,
-                            Description = description,
-                            Passed = false,
-                            Expected = "HTTP 200 OK",
-                            Actual = "HTTP " + statusCode,
-                            WhatToCheck = GetSmokeTestHint(stage),
-                            Duration = sw.Elapsed
-                        };
-                    }
-
-                    // Check content markers — at least one must be present
-                    bool foundMarker = false;
-                    foreach (var marker in contentMarkers)
-                    {
-                        if (body.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            foundMarker = true;
-                            break;
-                        }
-                    }
-
-                    if (!foundMarker)
-                    {
-                        return new TestResult
-                        {
-                            TestName = testName,
-                            Category = CategoryName,
-                            Description = description,
-                            Passed = false,
-                            Expected = "Page contains '" + contentMarkerLabel + "'",
-                            Actual = "Content marker not found in response",
-                            WhatToCheck = GetSmokeTestHint(stage),
-                            Duration = sw.Elapsed
-                        };
-                    }
-
                     return new TestResult
                     {
                         TestName = testName,
                         Category = CategoryName,
                         Description = description,
-                        Passed = true,
-                        Expected = "HTTP 200 with '" + contentMarkerLabel + "' content",
-                        Actual = "HTTP 200 with '" + contentMarkerLabel + "' content",
-                        WhatToCheck = string.Empty,
+                        Passed = false,
+                        Expected = "HTTP 200 OK",
+                        Actual = "HTTP " + statusCode,
+                        WhatToCheck = GetSmokeTestHint(stage),
                         Duration = sw.Elapsed
                     };
                 }
+
+                // Check content markers — at least one must be present
+                bool foundMarker = false;
+                foreach (var marker in contentMarkers)
+                {
+                    if (body.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        foundMarker = true;
+                        break;
+                    }
+                }
+
+                if (!foundMarker)
+                {
+                    return new TestResult
+                    {
+                        TestName = testName,
+                        Category = CategoryName,
+                        Description = description,
+                        Passed = false,
+                        Expected = "Page contains '" + contentMarkerLabel + "'",
+                        Actual = "Content marker not found in response",
+                        WhatToCheck = GetSmokeTestHint(stage),
+                        Duration = sw.Elapsed
+                    };
+                }
+
+                return new TestResult
+                {
+                    TestName = testName,
+                    Category = CategoryName,
+                    Description = description,
+                    Passed = true,
+                    Expected = "HTTP 200 with '" + contentMarkerLabel + "' content",
+                    Actual = "HTTP 200 with '" + contentMarkerLabel + "' content",
+                    WhatToCheck = string.Empty,
+                    Duration = sw.Elapsed
+                };
             }
             catch (Exception ex)
             {
@@ -170,23 +177,65 @@ namespace LoanProcessing.Web.Validation.Tests
         }
 
         /// <summary>
-        /// Attempts to resolve the base URL from HttpContext.Current.
-        /// Falls back to "http://localhost" if not available.
+        /// Resolves the base URL for smoke test HTTP requests.
+        /// Always targets localhost to avoid routing through a load balancer
+        /// or reverse proxy, which would cause thread contention and timeouts.
+        ///
+        /// Works across all modernization stages:
+        ///   - IIS on Windows (.NET Framework): HttpContext provides the port
+        ///   - Kestrel on Linux (.NET 8): ASPNETCORE_URLS env var provides the port
+        ///   - Container (.NET 8): same as above, typically port 8080
         /// </summary>
         private static string ResolveBaseUrl()
         {
+            // Try HttpContext first (works on .NET Framework / IIS)
             try
             {
-                var context = System.Web.HttpContext.Current;
-                if (context != null && context.Request != null)
+                var contextType = Type.GetType("System.Web.HttpContext, System.Web");
+                if (contextType != null)
                 {
-                    var request = context.Request;
-                    return request.Url.Scheme + "://" + request.Url.Authority;
+                    var currentProp = contextType.GetProperty("Current",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (currentProp != null)
+                    {
+                        var context = currentProp.GetValue(null);
+                        if (context != null)
+                        {
+                            var requestProp = contextType.GetProperty("Request");
+                            var request = requestProp != null ? requestProp.GetValue(context) : null;
+                            if (request != null)
+                            {
+                                var urlProp = request.GetType().GetProperty("Url");
+                                var url = urlProp != null ? urlProp.GetValue(request) as Uri : null;
+                                if (url != null)
+                                {
+                                    return url.Scheme + "://localhost:" + url.Port;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             catch
             {
-                // HttpContext not available — fall back
+                // HttpContext not available — try next approach
+            }
+
+            // Try ASPNETCORE_URLS (works on .NET 8 / Kestrel / containers)
+            try
+            {
+                var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+                if (!string.IsNullOrEmpty(urls))
+                {
+                    // Take the first URL, replace the host with localhost
+                    var firstUrl = urls.Split(';')[0].Trim();
+                    var uri = new Uri(firstUrl.Replace("*", "localhost").Replace("+", "localhost").Replace("0.0.0.0", "localhost"));
+                    return uri.Scheme + "://localhost:" + uri.Port;
+                }
+            }
+            catch
+            {
+                // Env var not set or malformed — fall back
             }
 
             return "http://localhost";

@@ -14,6 +14,7 @@ namespace LoanProcessing.Web.Validation.Helpers
     public class DatabaseHelper : IDisposable
     {
         private readonly string _connectionString;
+        private const int CommandTimeoutSeconds = 30;
         private bool _disposed;
 
         // Table name mapping: logical (PascalCase) → PostgreSQL (snake_case)
@@ -167,6 +168,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                         connection.Open();
                         using (var command = new NpgsqlCommand(sql, connection))
                         {
+                            command.CommandTimeout = CommandTimeoutSeconds;
                             AddNpgsqlParameters(command, parameters);
                             using (var adapter = new NpgsqlDataAdapter(command))
                             {
@@ -182,6 +184,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                         connection.Open();
                         using (var command = new SqlCommand(sql, connection))
                         {
+                            command.CommandTimeout = CommandTimeoutSeconds;
                             AddSqlParameters(command, parameters);
                             using (var adapter = new SqlDataAdapter(command))
                             {
@@ -279,6 +282,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                     connection.Open();
                     using (var command = new NpgsqlCommand(sql, connection))
                     {
+                        command.CommandTimeout = CommandTimeoutSeconds;
                         AddNpgsqlParameters(command, parameters);
                         return command.ExecuteNonQuery();
                     }
@@ -291,6 +295,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                     connection.Open();
                     using (var command = new SqlCommand(sql, connection))
                     {
+                        command.CommandTimeout = CommandTimeoutSeconds;
                         AddSqlParameters(command, parameters);
                         return command.ExecuteNonQuery();
                     }
@@ -314,6 +319,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                         connection.Open();
                         using (var command = new NpgsqlCommand(sql, connection))
                         {
+                            command.CommandTimeout = CommandTimeoutSeconds;
                             AddNpgsqlParameters(command, parameters);
                             result = command.ExecuteScalar();
                         }
@@ -326,6 +332,7 @@ namespace LoanProcessing.Web.Validation.Helpers
                         connection.Open();
                         using (var command = new SqlCommand(sql, connection))
                         {
+                            command.CommandTimeout = CommandTimeoutSeconds;
                             AddSqlParameters(command, parameters);
                             result = command.ExecuteScalar();
                         }

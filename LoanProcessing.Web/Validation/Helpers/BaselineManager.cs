@@ -99,11 +99,23 @@ namespace LoanProcessing.Web.Validation.Helpers
         }
 
         /// <summary>
-        /// Returns the default baseline file path: App_Data/validation-baseline.json
-        /// relative to the application's base directory.
+        /// Returns the default baseline file path.
+        /// Uses the VALIDATION_BASELINE_PATH environment variable if set,
+        /// otherwise falls back to App_Data/validation-baseline.json relative
+        /// to the application's base directory.
+        ///
+        /// On containers or Linux, set VALIDATION_BASELINE_PATH to a writable
+        /// location (e.g., /tmp/validation-baseline.json or a mounted volume).
         /// </summary>
         public static string GetBaselineFilePath()
         {
+            // Allow override via environment variable for containers / Linux
+            string envPath = Environment.GetEnvironmentVariable("VALIDATION_BASELINE_PATH");
+            if (!string.IsNullOrWhiteSpace(envPath))
+            {
+                return envPath;
+            }
+
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             return Path.Combine(baseDir, "App_Data", "validation-baseline.json");
         }
