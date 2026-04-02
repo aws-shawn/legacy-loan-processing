@@ -213,6 +213,64 @@ namespace LoanProcessing.Web.Data
         }
 
         /// <summary>
+        /// Returns the sum of ApprovedAmount for all approved applications for the given customer,
+        /// excluding the specified application.
+        /// </summary>
+        /// <param name="customerId">The customer ID to sum approved amounts for.</param>
+        /// <param name="excludeApplicationId">The application ID to exclude from the sum.</param>
+        /// <returns>The total approved amount, or 0 if no approved loans exist.</returns>
+        public decimal GetApprovedAmountsByCustomer(int customerId, int excludeApplicationId)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            using (var command = new SqlCommand())
+            {
+                command.Connection = connection;
+                command.CommandType = CommandType.Text;
+                command.CommandText = @"
+                    SELECT ISNULL(SUM(ApprovedAmount), 0)
+                    FROM LoanApplications
+                    WHERE CustomerId = @CustomerId
+                      AND Status = 'Approved'
+                      AND ApplicationId != @ExcludeApplicationId";
+
+                command.Parameters.AddWithValue("@CustomerId", customerId);
+                command.Parameters.AddWithValue("@ExcludeApplicationId", excludeApplicationId);
+
+                connection.Open();
+                var result = command.ExecuteScalar();
+                return (result == DBNull.Value || result == null) ? 0m : Convert.ToDecimal(result);
+            }
+        }
+
+        /// <summary>
+        /// Updates the application's Status and InterestRate columns.
+        /// </summary>
+        /// <param name="applicationId">The application ID to update.</param>
+        /// <param name="status">The new status value.</param>
+        /// <param name="interestRate">The new interest rate value.</param>
+        public void UpdateStatusAndRate(int applicationId, string status, decimal interestRate)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            using (var command = new SqlCommand())
+            {
+                command.Connection = connection;
+                command.CommandType = CommandType.Text;
+                command.CommandText = @"
+                    UPDATE LoanApplications
+                    SET Status = @Status,
+                        InterestRate = @InterestRate
+                    WHERE ApplicationId = @ApplicationId";
+
+                command.Parameters.AddWithValue("@ApplicationId", applicationId);
+                command.Parameters.AddWithValue("@Status", status);
+                command.Parameters.AddWithValue("@InterestRate", interestRate);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>
         /// Maps a SqlDataReader row to a LoanApplication object.
         /// Demonstrates manual result mapping pattern common in legacy applications.
         /// </summary>

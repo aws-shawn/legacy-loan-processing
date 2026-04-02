@@ -177,6 +177,45 @@ namespace LoanProcessing.Web.Data
         }
 
         /// <summary>
+        /// Finds the best matching interest rate for the given criteria.
+        /// </summary>
+        /// <param name="loanType">The loan type to match.</param>
+        /// <param name="creditScore">The credit score to match within range.</param>
+        /// <param name="termMonths">The term in months to match within range.</param>
+        /// <param name="asOfDate">The date to check effective/expiration against.</param>
+        /// <returns>The best matching interest rate, or null if no match found.</returns>
+        public InterestRate GetRateByCriteria(string loanType, int creditScore, int termMonths, DateTime asOfDate)
+        {
+            using (var connection = new SqlConnection(_connectionString))
+            using (var command = new SqlCommand(
+                @"SELECT TOP 1 * FROM InterestRates 
+                  WHERE LoanType = @LoanType 
+                    AND @CreditScore BETWEEN MinCreditScore AND MaxCreditScore 
+                    AND @TermMonths BETWEEN MinTermMonths AND MaxTermMonths 
+                    AND EffectiveDate <= @AsOfDate 
+                    AND (ExpirationDate IS NULL OR ExpirationDate >= @AsOfDate) 
+                  ORDER BY EffectiveDate DESC",
+                connection))
+            {
+                command.Parameters.AddWithValue("@LoanType", loanType);
+                command.Parameters.AddWithValue("@CreditScore", creditScore);
+                command.Parameters.AddWithValue("@TermMonths", termMonths);
+                command.Parameters.AddWithValue("@AsOfDate", asOfDate);
+
+                connection.Open();
+                using (var reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        return MapInterestRateFromReader(reader);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Maps a SqlDataReader row to an InterestRate object.
         /// </summary>
         /// <param name="reader">The data reader.</param>

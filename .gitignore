@@ -256,3 +256,6 @@ deployment-outputs.txt
 tfplan
 .terraform/
 .terraform.lock.hcl
+
+# macOS
+.DS_Store

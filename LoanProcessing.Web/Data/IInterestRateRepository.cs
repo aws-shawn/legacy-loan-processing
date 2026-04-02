@@ -40,5 +40,18 @@ namespace LoanProcessing.Web.Data
         /// </summary>
         /// <param name="rate">The interest rate to update.</param>
         void UpdateRate(InterestRate rate);
+
+        /// <summary>
+        /// Finds the best matching interest rate for the given criteria.
+        /// Matches on loan type, credit score within [MinCreditScore, MaxCreditScore],
+        /// term within [MinTermMonths, MaxTermMonths], effective on or before asOfDate,
+        /// not expired as of asOfDate. Returns the most recently effective match, or null.
+        /// </summary>
+        /// <param name="loanType">The loan type to match.</param>
+        /// <param name="creditScore">The credit score to match within range.</param>
+        /// <param name="termMonths">The term in months to match within range.</param>
+        /// <param name="asOfDate">The date to check effective/expiration against.</param>
+        /// <returns>The best matching interest rate, or null if no match found.</returns>
+        InterestRate GetRateByCriteria(string loanType, int creditScore, int termMonths, DateTime asOfDate);
     }
 }
