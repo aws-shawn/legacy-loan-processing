@@ -192,6 +192,9 @@
     <Compile Include="Services\ReportService.cs" />
     <Compile Include="Services\IInterestRateService.cs" />
     <Compile Include="Services\InterestRateService.cs" />
+    <Compile Include="Services\ICreditEvaluationService.cs" />
+    <Compile Include="Services\CreditEvaluationService.cs" />
+    <Compile Include="Services\CreditEvaluationCalculator.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\CustomerController.cs" />
     <Compile Include="Controllers\LoanController.cs" />
